@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { saveWorkout } from '@/app/actions';
+import { Exercise as ExerciseType, SetData } from '@/types';
 
 export default function WorkoutPage() {
   const { currentDay, isFocusMode, setFocusMode, markDayComplete, incrementDay } = useStore();
@@ -14,7 +15,7 @@ export default function WorkoutPage() {
   const todayWorkout = GET_WORKOUT_FOR_DAY(currentDay);
   const initialExercises = EXERCISES_BY_TYPE[todayWorkout] || [];
   
-  const [exercises, setExercises] = useState(
+  const [exercises, setExercises] = useState<ExerciseType[]>(
     initialExercises.map((ex, idx) => ({
       ...ex,
       id: `${idx}`,
@@ -24,7 +25,7 @@ export default function WorkoutPage() {
 
   const [activeExerciseIndex, setActiveExerciseIndex] = useState(0);
 
-  const handleSetChange = (exIdx: number, setIdx: number, field: string, value: any) => {
+  const handleSetChange = (exIdx: number, setIdx: number, field: keyof SetData, value: any) => {
     const newExercises = [...exercises];
     newExercises[exIdx].setsData[setIdx] = {
       ...newExercises[exIdx].setsData[setIdx],
@@ -102,7 +103,7 @@ export default function WorkoutPage() {
         </button>
       </nav>
 
-      <div className="page-padding" style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      <div className="page-padding" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 24 }}>
         {exercises.map((ex, exIdx) => {
           if (isFocusMode && activeExerciseIndex !== exIdx) return null;
 
@@ -119,7 +120,13 @@ export default function WorkoutPage() {
                 gap: 20
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div className="page-padding" style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 20
+                }}>
+                  {/* EXERCISE HEADER */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div>
                   {ex.isScapula && (
                     <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4, display: 'block' }}>
@@ -145,7 +152,7 @@ export default function WorkoutPage() {
                   <span style={{ textAlign: 'center' }}>Done</span>
                 </div>
 
-                {ex.setsData.map((set, setIdx) => (
+                {ex.setsData.map((set: SetData, setIdx: number) => (
                   <div key={setIdx} className="set-grid" style={{ 
                     opacity: set.completed ? 0.6 : 1,
                     transition: 'opacity 0.2s'
@@ -263,6 +270,7 @@ export default function WorkoutPage() {
                    </button>
                 </div>
               )}
+                </div>
             </section>
           );
         })}

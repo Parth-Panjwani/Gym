@@ -1,15 +1,16 @@
 'use client';
 
 import { useStore } from '@/store/useStore';
-import { ChevronLeft, Info, TrendingUp, Calendar, Zap, Activity } from 'lucide-react';
+import { ChevronLeft, TrendingUp, Calendar, Zap, Activity } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { getStats } from '@/app/actions';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
+import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
+import { DailyLog } from '@/types';
 
 export default function StatsPage() {
   const { streak, completedDays, currentDay } = useStore();
-  const [dbStats, setDbStats] = useState<any[]>([]);
+  const [dbStats, setDbStats] = useState<DailyLog[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -19,7 +20,6 @@ export default function StatsPage() {
     });
   }, []);
 
-  const totalSessions = dbStats.length;
   const totalVolume = dbStats.reduce((acc, curr) => acc + Number(curr.total_volume || 0), 0);
 
   return (

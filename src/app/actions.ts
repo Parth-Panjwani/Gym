@@ -1,12 +1,13 @@
 'use server';
 
 import db from '@/lib/db';
+import { WorkoutType, SetData, Exercise as ExerciseType, DailyLog, DetailedLog } from '@/types';
 
 export async function saveWorkout(data: {
   dayNumber: number;
   workoutType: string;
   notes?: string;
-  exercises: any[];
+  exercises: any[]; // Using any here because client-side state is slightly different, but the internal mapping is safe
 }) {
   let client;
   try {
@@ -63,12 +64,11 @@ export async function saveWorkout(data: {
   }
 }
 
-export async function getStats() {
+export async function getStats(): Promise<DailyLog[]> {
   let client;
   try {
     client = await db.connect();
     
-    // Fetch stats with total volume calculation
     const res = await client.query(`
       SELECT 
         d.day_number, 
@@ -94,7 +94,7 @@ export async function getStats() {
   }
 }
 
-export async function getDetailedHistory(limit: number = 5) {
+export async function getDetailedHistory(limit: number = 5): Promise<DetailedLog[]> {
   let client;
   try {
     client = await db.connect();

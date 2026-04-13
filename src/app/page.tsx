@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getDetailedHistory, getStats } from '@/app/actions';
+import { DetailedLog, DailyLog } from '@/types';
 
 function DayModal({ dayIndex, onClose }: { dayIndex: number, onClose: () => void }) {
   const workoutType = GET_WORKOUT_FOR_DAY(dayIndex);
@@ -131,15 +132,15 @@ function ExpandableSection({ title, children, isScapula = false }: { title: stri
 
 export default function Dashboard() {
   const { currentDay, streak, completedDays } = useStore();
-  const [history, setHistory] = useState<any[]>([]);
-  const [stats, setStats] = useState<any[]>([]);
+  const [history, setHistory] = useState<DetailedLog[]>([]);
+  const [stats, setStats] = useState<DailyLog[]>([]);
   const [viewDay, setViewDay] = useState<number | null>(null);
   
   const todayWorkout = GET_WORKOUT_FOR_DAY(currentDay);
   const progressPercent = (currentDay / 100) * 100;
   const isCompleted = completedDays.includes(currentDay);
 
-  const lastVolume = stats.length > 0 ? stats[stats.length - 1].total_volume : 0;
+  const lastVolume = stats.length > 0 ? stats[stats.length - 1].total_volume || 0 : 0;
 
   useEffect(() => {
     getDetailedHistory(5).then(setHistory);
@@ -297,7 +298,7 @@ export default function Dashboard() {
                  key={i} 
                  onClick={() => {
                    // Calculate some representative day index for this split item (e.g. within current week)
-                   setViewDay(currentDay + (dayCode - (currentDay % 7))); 
+                   setViewDay(currentDay + ((dayCode || 7) - (currentDay % 7 || 7))); 
                  }}
                  style={{ 
                   width: '100%',
