@@ -69,7 +69,13 @@ export default function StatsPage() {
          </h3>
          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', padding: '24px', borderRadius: '20px', height: '300px' }}>
             <ResponsiveContainer width="100%" height="100%">
-               <AreaChart data={dbStats.length > 0 ? dbStats : Array.from({ length: 7 }).map((_, i) => ({ day_number: i, total_volume: 0 }))}>
+               <AreaChart data={dbStats.length > 0 ? dbStats : Array.from({ length: 7 }).map((_, i) => ({ 
+                 id: -1,
+                 day_number: i, 
+                 workout_type: 'Recovery' as any,
+                 completed_at: new Date().toISOString(),
+                 total_volume: 0 
+               }))}>
                   <defs>
                     <linearGradient id="colorVolume" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="var(--accent)" stopOpacity={0.3}/>
