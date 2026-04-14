@@ -2,7 +2,7 @@
 
 import { useStore } from '@/store/useStore';
 import { GET_WORKOUT_FOR_DAY, EXERCISES_BY_TYPE, WORKOUT_SPLIT } from '@/constants/program';
-import { ChevronDown, ChevronUp, Play, CheckCircle2, Calendar, History, List, ChevronRight, Clock, X, Info } from 'lucide-react';
+import { ChevronDown, ChevronUp, Play, CheckCircle2, Calendar, History, List, ChevronRight, Clock, X, Info, ChevronLeft, RotateCcw, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -131,10 +131,11 @@ function ExpandableSection({ title, children, isScapula = false }: { title: stri
 }
 
 export default function Dashboard() {
-  const { currentDay, streak, completedDays } = useStore();
+  const { currentDay, streak, completedDays, incrementDay, decrementDay, resetStore } = useStore();
   const [history, setHistory] = useState<DetailedLog[]>([]);
   const [stats, setStats] = useState<DailyLog[]>([]);
   const [viewDay, setViewDay] = useState<number | null>(null);
+  const [isResetConfirming, setIsResetConfirming] = useState(false);
   
   const todayWorkout = GET_WORKOUT_FOR_DAY(currentDay);
   const progressPercent = (currentDay / 100) * 100;
@@ -142,18 +143,36 @@ export default function Dashboard() {
 
   const lastVolume = stats.length > 0 ? stats[stats.length - 1].total_volume || 0 : 0;
 
+  const { setOnlineStatus } = useStore();
+
   useEffect(() => {
-    getDetailedHistory(5).then(setHistory);
-    getStats().then(setStats);
-  }, [completedDays]);
+    getDetailedHistory(5).then(res => {
+      setHistory(res.data);
+      if (res.error === 'OFFLINE') setOnlineStatus(false);
+      else setOnlineStatus(true);
+    }).catch(() => {});
+    
+    getStats().then(res => {
+      setStats(res.data);
+      if (res.error === 'OFFLINE') setOnlineStatus(false);
+      else setOnlineStatus(true);
+    }).catch(() => {});
+  }, [completedDays, setOnlineStatus]);
 
   const upcomingDays = [currentDay + 1, currentDay + 2, currentDay + 3].map(day => ({
-    day,
-    workout: GET_WORKOUT_FOR_DAY(day)
+    day: day > 100 ? day - 100 : day,
+    workout: GET_WORKOUT_FOR_DAY(day > 100 ? day - 100 : day)
   }));
 
+  const handleReset = () => {
+    if (confirm("This will permanently wipe your 100-day journey progress. Start over?")) {
+      resetStore();
+      setIsResetConfirming(false);
+    }
+  };
+
   return (
-    <main className="page-padding" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '40px' }}>
+    <main className="page-padding" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '32px', paddingBottom: 120 }}>
       
       <AnimatePresence>
         {viewDay !== null && (
@@ -161,14 +180,47 @@ export default function Dashboard() {
         )}
       </AnimatePresence>
 
-      {/* 1. TOP SECTION */}
-      <section style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-          <h1 style={{ fontSize: '24px', fontWeight: 700 }}>Day {currentDay} <span style={{ color: 'var(--text-tertiary)', fontSize: 16 }}>/ 100</span></h1>
-          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent)' }}>{Math.round(progressPercent)}% DONE</span>
+      {/* 1. TOP SECTION (Schedule Navigator) */}
+      <section style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <button 
+            onClick={decrementDay}
+            style={{ 
+              padding: 12, 
+              background: 'var(--card)', 
+              borderRadius: 12, 
+              border: '1px solid var(--border)',
+              color: currentDay === 1 ? 'var(--text-tertiary)' : 'var(--text)',
+              opacity: currentDay === 1 ? 0.5 : 1
+            }}
+            disabled={currentDay === 1}
+          >
+            <ChevronLeft size={20} />
+          </button>
+
+          <div style={{ textAlign: 'center' }}>
+            <h1 style={{ fontSize: '24px', fontWeight: 700 }}>Day {currentDay} <span style={{ color: 'var(--text-tertiary)', fontSize: 16 }}>/ 100</span></h1>
+            <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent)', marginTop: 4 }}>{Math.round(progressPercent)}% PROGRESS</p>
+          </div>
+
+          <button 
+            onClick={incrementDay}
+            style={{ 
+              padding: 12, 
+              background: 'var(--card)', 
+              borderRadius: 12, 
+              border: '1px solid var(--border)',
+              color: currentDay === 100 ? 'var(--text-tertiary)' : 'var(--text)',
+              opacity: currentDay === 100 ? 0.5 : 1
+            }}
+            disabled={currentDay === 100}
+          >
+            <ChevronRight size={20} />
+          </button>
         </div>
-        <div style={{ width: '100%', height: '6px', background: 'var(--card)', borderRadius: '3px', marginTop: '4px', overflow: 'hidden' }}>
-          <div style={{ width: `${progressPercent}%`, height: '100%', background: 'var(--accent)', borderRadius: '3px' }} />
+        
+        <div style={{ width: '100%', height: '6px', background: 'var(--card)', borderRadius: '3px', overflow: 'hidden' }}>
+          <div style={{ width: `${progressPercent}%`, height: '100%', background: 'var(--accent)', borderRadius: '3px', transition: 'width 0.3s ease' }} />
         </div>
       </section>
 
@@ -176,15 +228,16 @@ export default function Dashboard() {
       <section style={{
         background: 'var(--card)',
         padding: '24px',
-        borderRadius: '20px',
+        borderRadius: '24px',
         display: 'flex',
         flexDirection: 'column',
         gap: '20px',
-        border: '1px solid var(--border)'
+        border: '1px solid var(--border)',
+        boxShadow: '0 8px 32px rgba(0,0,0,0.12)'
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
-            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase' }}>Current Goal</span>
+            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Workout Focus</span>
             <h3 style={{ fontSize: '22px', fontWeight: 700, marginTop: 4 }}>{todayWorkout}</h3>
           </div>
           <span style={{ 
@@ -215,17 +268,35 @@ export default function Dashboard() {
           background: isCompleted ? 'var(--card-hover)' : 'var(--accent)',
           color: isCompleted ? 'var(--text-secondary)' : '#fff',
           padding: '18px',
-          borderRadius: '14px',
+          borderRadius: '16px',
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
           fontWeight: 700,
           gap: '10px',
-          pointerEvents: todayWorkout === 'Rest' || isCompleted ? 'none' : 'auto'
+          pointerEvents: todayWorkout === 'Rest' || isCompleted ? 'none' : 'auto',
+          transition: 'all 0.2s ease'
         }}>
           {isCompleted ? <CheckCircle2 size={20} /> : <Play size={20} fill="currentColor" />}
           {isCompleted ? 'Session Complete' : (todayWorkout === 'Rest' ? 'Recovery Only' : 'Start Workout')}
         </Link>
+
+        {todayWorkout === 'Rest' && !isCompleted && (
+          <button 
+            onClick={() => incrementDay()}
+            style={{ 
+              width: '100%', 
+              padding: '14px', 
+              borderRadius: 12, 
+              background: 'var(--accent-muted)', 
+              color: 'var(--accent)', 
+              fontWeight: 600, 
+              fontSize: 14 
+            }}
+          >
+            Mark Rest Day Complete
+          </button>
+        )}
       </section>
 
       {/* 3. UPCOMING PLAN SECTION */}
@@ -241,8 +312,8 @@ export default function Dashboard() {
                style={{ 
                 minWidth: '140px', 
                 background: 'var(--card)', 
-                padding: '16px', 
-                borderRadius: '16px', 
+                padding: '20px', 
+                borderRadius: '20px', 
                 border: '1px solid var(--border)',
                 flexShrink: 0,
                 textAlign: 'left'
@@ -264,63 +335,53 @@ export default function Dashboard() {
         </h3>
         
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {history.map((log, i) => (
-            <ExpandableSection key={i} title={`Day ${log.day_number}: ${log.workout_type}`}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {log.exercises?.filter((e: any) => e.exercise_name).map((ex: any, ei: number) => (
-                  <div key={ei} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
-                    <span style={{ fontSize: 13, fontWeight: 500 }}>{ex.exercise_name}</span>
-                    <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
-                      {ex.sets_data?.length} sets
-                    </span>
+          {history.length === 0 ? (
+            <div style={{ padding: 24, textAlign: 'center', background: 'var(--card)', borderRadius: 16, border: '1px solid var(--border)', color: 'var(--text-tertiary)', fontSize: 13 }}>
+              No history found for current day range.
+            </div>
+          ) : (
+            history.map((log, i) => (
+              <ExpandableSection key={i} title={`Day ${log.day_number}: ${log.workout_type}`}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {log.exercises?.filter((e: any) => e.exercise_name).map((ex: any, ei: number) => (
+                    <div key={ei} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
+                      <span style={{ fontSize: 13, fontWeight: 500 }}>{ex.exercise_name}</span>
+                      <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
+                        {ex.sets_data?.length} sets
+                      </span>
+                    </div>
+                  ))}
+                  <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <Clock size={12} /> {new Date(log.completed_at).toLocaleDateString()}
                   </div>
-                ))}
-                <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <Clock size={12} /> {new Date(log.completed_at).toLocaleDateString()}
                 </div>
-              </div>
-            </ExpandableSection>
-          ))}
+              </ExpandableSection>
+            ))
+          )}
         </div>
       </section>
 
-      {/* 5. WEEKLY ROUTINE REFERENCE */}
-      <section style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        <h3 style={{ fontSize: '18px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <List size={18} className="text-secondary" /> Weekly Split
-        </h3>
-        <div style={{ background: 'var(--card)', borderRadius: '16px', border: '1px solid var(--border)', overflow: 'hidden' }}>
-           {[1, 2, 3, 4, 5, 6, 0].map((dayCode, i) => {
-             const workout = WORKOUT_SPLIT[dayCode as keyof typeof WORKOUT_SPLIT];
-             const isToday = workout === todayWorkout;
-             return (
-               <button 
-                 key={i} 
-                 onClick={() => {
-                   // Calculate some representative day index for this split item (e.g. within current week)
-                   setViewDay(currentDay + ((dayCode || 7) - (currentDay % 7 || 7))); 
-                 }}
-                 style={{ 
-                  width: '100%',
-                  padding: '16px', 
-                  display: 'flex', 
-                  justifyContent: 'space-between', 
-                  alignItems: 'center',
-                  borderBottom: i === 6 ? 'none' : '1px solid var(--border)',
-                  background: isToday ? 'var(--accent-muted)' : 'transparent'
-               }}>
-                 <span style={{ fontSize: 13, fontWeight: 600 }}>{['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dayCode]}</span>
-                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 13, color: isToday ? 'var(--accent)' : 'var(--text-secondary)' }}>
-                      {workout}
-                    </span>
-                    <ChevronRight size={14} className="text-tertiary" />
-                 </div>
-               </button>
-             );
-           })}
-        </div>
+      {/* 5. RESET BUTTON */}
+      <section style={{ marginTop: 40, borderTop: '1px solid var(--border)', paddingTop: 40 }}>
+         <button 
+           onClick={handleReset}
+           style={{ 
+             width: '100%', 
+             display: 'flex', 
+             alignItems: 'center', 
+             justifyContent: 'center', 
+             gap: 8, 
+             color: 'var(--danger)', 
+             fontSize: 13, 
+             fontWeight: 600,
+             opacity: 0.6
+           }}
+         >
+           <RotateCcw size={14} />
+           Reset 100-Day Journey
+         </button>
       </section>
+
     </main>
   );
 }

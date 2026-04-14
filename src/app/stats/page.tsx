@@ -8,17 +8,24 @@ import { getStats } from '@/app/actions';
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import { DailyLog } from '@/types';
 
-export default function StatsPage() {
-  const { streak, completedDays, currentDay } = useStore();
-  const [dbStats, setDbStats] = useState<DailyLog[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const { setOnlineStatus } = useStore();
 
   useEffect(() => {
-    getStats().then(setDbStats).catch(err => {
+    getStats().then(res => {
+      setDbStats(res.data);
+      if (res.error === 'OFFLINE') {
+        setOnlineStatus(false);
+        setError("Cloud sync unavailable. Showing log cache.");
+      } else {
+        setOnlineStatus(true);
+        setError(null);
+      }
+    }).catch(err => {
       console.error(err);
+      setOnlineStatus(false);
       setError("Database sync unavailable. Showing local data.");
     });
-  }, []);
+  }, [setOnlineStatus]);
 
   const totalVolume = dbStats.reduce((acc, curr) => acc + Number(curr.total_volume || 0), 0);
 
@@ -67,8 +74,8 @@ export default function StatsPage() {
          <h3 style={{ fontSize: '18px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
             <TrendingUp size={18} className="text-accent" /> Volume Trend
          </h3>
-         <div style={{ background: 'var(--card)', border: '1px solid var(--border)', padding: '24px', borderRadius: '20px', height: '300px' }}>
-            <ResponsiveContainer width="100%" height="100%">
+         <div style={{ background: 'var(--card)', border: '1px solid var(--border)', padding: '24px', borderRadius: '20px', minHeight: '300px' }}>
+            <ResponsiveContainer width="100%" height={252}>
                <AreaChart data={dbStats.length > 0 ? dbStats : Array.from({ length: 7 }).map((_, i) => ({ 
                  id: -1,
                  day_number: i, 

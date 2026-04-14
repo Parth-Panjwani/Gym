@@ -1,13 +1,13 @@
 'use server';
 
 import db from '@/lib/db';
-import { WorkoutType, SetData, Exercise as ExerciseType, DailyLog, DetailedLog } from '@/types';
+import { DailyLog, DetailedLog } from '@/types';
 
 export async function saveWorkout(data: {
   dayNumber: number;
   workoutType: string;
   notes?: string;
-  exercises: any[]; // Using any here because client-side state is slightly different, but the internal mapping is safe
+  exercises: any[];
 }) {
   let client;
   try {
@@ -55,16 +55,22 @@ export async function saveWorkout(data: {
 
     await client.query('COMMIT');
     return { success: true };
-  } catch (error) {
+  } catch (error: any) {
     if (client) await client.query('ROLLBACK');
-    console.error('Database Sync Error:', error);
+    console.warn('Database connection unavailable (Sync suspended):', error.message);
+    
+    // Check if it's a DNS/Connection issue
+    if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED' || error.message.includes('getaddrinfo')) {
+      return { success: false, error: 'OFFLINE' };
+    }
+    
     return { success: false, error: 'DB_SYNC_FAILED' };
   } finally {
     if (client) client.release();
   }
 }
 
-export async function getStats(): Promise<DailyLog[]> {
+export async function getStats(): Promise<{ data: DailyLog[], error?: string }> {
   let client;
   try {
     client = await db.connect();
@@ -85,21 +91,20 @@ export async function getStats(): Promise<DailyLog[]> {
       FROM daily_logs d
       ORDER BY d.day_number ASC
     `);
-    return res.rows;
-  } catch (error) {
-    console.error('Failed to fetch stats:', error);
-    return [];
+    return { data: res.rows };
+  } catch (error: any) {
+    console.warn('Failed to fetch stats (DB Offline):', error.message);
+    return { data: [], error: 'OFFLINE' };
   } finally {
     if (client) client.release();
   }
 }
 
-export async function getDetailedHistory(limit: number = 5): Promise<DetailedLog[]> {
+export async function getDetailedHistory(limit: number = 5): Promise<{ data: DetailedLog[], error?: string }> {
   let client;
   try {
     client = await db.connect();
     
-    // Fetch recent logs with their exercises
     const res = await client.query(`
       SELECT 
         d.id,
@@ -119,10 +124,10 @@ export async function getDetailedHistory(limit: number = 5): Promise<DetailedLog
       LIMIT $1
     `, [limit]);
 
-    return res.rows;
-  } catch (error) {
-    console.error('Failed to fetch detailed history:', error);
-    return [];
+    return { data: res.rows };
+  } catch (error: any) {
+    console.warn('Failed to fetch history (DB Offline):', error.message);
+    return { data: [], error: 'OFFLINE' };
   } finally {
     if (client) client.release();
   }
