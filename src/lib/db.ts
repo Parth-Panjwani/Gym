@@ -1,47 +1,40 @@
-import { Pool } from 'pg';
+import { MongoClient, MongoClientOptions } from 'mongodb';
 
-// Create a singleton pool instance
-let pool: Pool | null = null;
-
-export const getPool = () => {
-  if (!pool) {
-    const connectionString = process.env.DATABASE_URL;
-    
-    if (!connectionString) {
-      console.warn('DATABASE_URL is not defined. Database features will be disabled.');
-      return null;
-    }
-
-    try {
-      pool = new Pool({
-        connectionString,
-        connectionTimeoutMillis: 5000,
-        ssl: {
-          rejectUnauthorized: false
-        }
-      });
-
-      pool.on('error', (err) => {
-        console.error('Unexpected error on idle client', err);
-        // Do not crash the process
-      });
-    } catch (err) {
-      console.error('Failed to initialize database pool', err);
-    }
-  }
-  return pool;
+const uri = process.env.DATABASE_URL;
+const options: MongoClientOptions = {
+  connectTimeoutMS: 5000,
 };
 
-// Default export for compatibility
-export default {
-  connect: async () => {
-    const p = getPool();
-    if (!p) throw new Error('Database pool not initialized');
-    return await p.connect();
-  },
-  query: async (text: string, params?: any[]) => {
-    const p = getPool();
-    if (!p) throw new Error('Database pool not initialized');
-    return await p.query(text, params);
+let client: MongoClient;
+let clientPromise: Promise<MongoClient>;
+
+if (!uri) {
+  throw new Error('Please add your Mongo URI to .env.local');
+}
+
+if (process.env.NODE_ENV === 'development') {
+  // In development mode, use a global variable so that the value
+  // is preserved across module reloads caused by HMR (Hot Module Replacement).
+  let globalWithMongo = global as typeof globalThis & {
+    _mongoClientPromise?: Promise<MongoClient>;
+  };
+
+  if (!globalWithMongo._mongoClientPromise) {
+    client = new MongoClient(uri, options);
+    globalWithMongo._mongoClientPromise = client.connect();
   }
-};
+  clientPromise = globalWithMongo._mongoClientPromise;
+} else {
+  // In production mode, it's best to not use a global variable.
+  client = new MongoClient(uri, options);
+  clientPromise = client.connect();
+}
+
+// Export a module-scoped MongoClient promise. By doing this in a
+// separate module, the client can be shared across functions.
+export default clientPromise;
+
+export async function getDb() {
+  const client = await clientPromise;
+  return client.db();
+}

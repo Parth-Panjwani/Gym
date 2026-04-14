@@ -1,6 +1,6 @@
 'use server';
 
-import db from '@/lib/db';
+import clientPromise, { getDb } from '@/lib/db';
 import { DailyLog, DetailedLog } from '@/types';
 
 export async function saveWorkout(data: {
@@ -9,126 +9,105 @@ export async function saveWorkout(data: {
   notes?: string;
   exercises: any[];
 }) {
-  let client;
   try {
-    client = await db.connect();
-    await client.query('BEGIN');
+    const db = await getDb();
     
-    // 1. Ensure tables exist
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS daily_logs (
-        id SERIAL PRIMARY KEY,
-        day_number INTEGER UNIQUE,
-        workout_type TEXT,
-        notes TEXT,
-        completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
+    // Using a single workouts collection
+    const workoutDocument = {
+      day_number: data.dayNumber,
+      workout_type: data.workoutType,
+      notes: data.notes || '',
+      completed_at: new Date(),
+      exercises: data.exercises.map(ex => ({
+        exercise_name: ex.name,
+        sets_data: ex.setsData
+      }))
+    };
 
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS exercise_logs (
-        id SERIAL PRIMARY KEY,
-        daily_log_id INTEGER REFERENCES daily_logs(id),
-        exercise_name TEXT,
-        sets_data JSONB,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-
-    // 2. Insert daily log
-    const dailyRes = await client.query(
-      'INSERT INTO daily_logs (day_number, workout_type, notes) VALUES ($1, $2, $3) ON CONFLICT (day_number) DO UPDATE SET workout_type = $2, notes = $3 RETURNING id',
-      [data.dayNumber, data.workoutType, data.notes || '']
+    await db.collection('workouts').replaceOne(
+      { day_number: data.dayNumber },
+      workoutDocument,
+      { upsert: true }
     );
-    const logId = dailyRes.rows[0].id;
 
-    // 3. Clear old exercises for this day
-    await client.query('DELETE FROM exercise_logs WHERE daily_log_id = $1', [logId]);
-
-    // 4. Insert exercise logs
-    for (const ex of data.exercises) {
-      await client.query(
-        'INSERT INTO exercise_logs (daily_log_id, exercise_name, sets_data) VALUES ($1, $2, $3)',
-        [logId, ex.name, JSON.stringify(ex.setsData)]
-      );
-    }
-
-    await client.query('COMMIT');
     return { success: true };
   } catch (error: any) {
-    if (client) await client.query('ROLLBACK');
-    console.warn('Database connection unavailable (Sync suspended):', error.message);
-    
-    // Check if it's a DNS/Connection issue
-    if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED' || error.message.includes('getaddrinfo')) {
+    console.warn('MongoDB connection unavailable (Sync suspended):', error.message);
+    if (error.message.includes('ENOTFOUND') || error.message.includes('ECONNREFUSED')) {
       return { success: false, error: 'OFFLINE' };
     }
-    
     return { success: false, error: 'DB_SYNC_FAILED' };
-  } finally {
-    if (client) client.release();
   }
 }
 
 export async function getStats(): Promise<{ data: DailyLog[], error?: string }> {
-  let client;
   try {
-    client = await db.connect();
+    const db = await getDb();
     
-    const res = await client.query(`
-      SELECT 
-        d.day_number, 
-        d.workout_type, 
-        d.completed_at,
-        COALESCE((
-          SELECT SUM(COALESCE((s->>'weight')::numeric, 0) * COALESCE((s->>'reps')::numeric, 0))
-          FROM exercise_logs e, jsonb_array_elements(e.sets_data) as s
-          WHERE e.daily_log_id = d.id
-          AND s->>'completed' = 'true'
-          AND s->>'weight' ~ '^[0-9.]+$'
-          AND s->>'reps' ~ '^[0-9.]+$'
-        ), 0) as total_volume
-      FROM daily_logs d
-      ORDER BY d.day_number ASC
-    `);
-    return { data: res.rows };
+    // Aggregation to calculate volume per day
+    const stats: any[] = await db.collection('workouts').aggregate([
+      { $unwind: "$exercises" },
+      { $unwind: "$exercises.sets_data" },
+      {
+        $group: {
+          _id: "$day_number",
+          day_number: { $first: "$day_number" },
+          workout_type: { $first: "$workout_type" },
+          completed_at: { $first: "$completed_at" },
+          total_volume: {
+            $sum: {
+              $cond: [
+                { $eq: ["$exercises.sets_data.completed", true] },
+                { 
+                  $multiply: [
+                    { $convert: { input: "$exercises.sets_data.weight", to: "double", onError: 0, onNull: 0 } },
+                    { $convert: { input: "$exercises.sets_data.reps", to: "double", onError: 0, onNull: 0 } }
+                  ]
+                },
+                0
+              ]
+            }
+          }
+        }
+      },
+      { $sort: { day_number: 1 } }
+    ]).toArray();
+
+    return { 
+      data: stats.map(s => ({
+        ...s,
+        completed_at: s.completed_at instanceof Date ? s.completed_at.toISOString() : s.completed_at
+      })) as DailyLog[] 
+    };
   } catch (error: any) {
-    console.warn('Failed to fetch stats (DB Offline):', error.message);
+    console.warn('Failed to fetch stats (MongoDB Offline):', error.message);
     return { data: [], error: 'OFFLINE' };
-  } finally {
-    if (client) client.release();
   }
 }
 
 export async function getDetailedHistory(limit: number = 5): Promise<{ data: DetailedLog[], error?: string }> {
-  let client;
   try {
-    client = await db.connect();
+    const db = await getDb();
     
-    const res = await client.query(`
-      SELECT 
-        d.id,
-        d.day_number,
-        d.workout_type,
-        d.completed_at,
-        json_agg(
-          json_build_object(
-            'exercise_name', e.exercise_name,
-            'sets_data', e.sets_data
-          )
-        ) as exercises
-      FROM daily_logs d
-      LEFT JOIN exercise_logs e ON d.id = e.daily_log_id
-      GROUP BY d.id
-      ORDER BY d.day_number DESC
-      LIMIT $1
-    `, [limit]);
+    // Fetch recent logs
+    const res = await db.collection('workouts')
+      .find({})
+      .sort({ day_number: -1 })
+      .limit(limit)
+      .toArray();
 
-    return { data: res.rows };
+    // Mapping MongoDB _id if needed, but the frontend uses day_number
+    const history = res.map(doc => ({
+      id: doc.day_number, // using day_number as a consistent ID
+      day_number: doc.day_number,
+      workout_type: doc.workout_type,
+      completed_at: doc.completed_at.toISOString(),
+      exercises: doc.exercises
+    })) as DetailedLog[];
+
+    return { data: history };
   } catch (error: any) {
-    console.warn('Failed to fetch history (DB Offline):', error.message);
+    console.warn('Failed to fetch history (MongoDB Offline):', error.message);
     return { data: [], error: 'OFFLINE' };
-  } finally {
-    if (client) client.release();
   }
 }
