@@ -8,7 +8,10 @@ import { getStats } from '@/app/actions';
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import { DailyLog } from '@/types';
 
-  const { setOnlineStatus } = useStore();
+export default function StatsPage() {
+  const { streak, completedDays, currentDay, setOnlineStatus } = useStore();
+  const [dbStats, setDbStats] = useState<DailyLog[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     getStats().then(res => {
