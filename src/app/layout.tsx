@@ -15,8 +15,6 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
-import OfflineBadge from "@/components/OfflineBadge";
-
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -31,7 +29,6 @@ export default function RootLayout({
       </head>
       <body>
         <div className="app-container">
-          <OfflineBadge />
           <div className="page-content">
             {children}
           </div>
